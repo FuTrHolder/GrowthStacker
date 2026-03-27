@@ -1,28 +1,32 @@
 """
 content_generator.py
-Gemini API를 사용하여 SEO 최적화 블로그 포스트를 생성합니다.
-- 모든 API 키는 환경변수에서만 읽어옵니다 (코드에 하드코딩 금지)
+Gemini API (google-genai SDK) 를 사용하여 SEO 최적화 블로그 포스트를 생성합니다.
+- google.generativeai (deprecated) 대신 google.genai 사용
+- 모든 API 키는 환경변수에서만 읽습니다
 """
 
 import os
-import json
 import random
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 
 # ─────────────────────────────────────────────
-# Gemini 초기화 (환경변수에서 키 로드)
+# Gemini 클라이언트 초기화
 # ─────────────────────────────────────────────
-def _get_model():
+def _get_client() -> genai.Client:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise EnvironmentError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel("gemini-1.5-flash")   # 무료 티어 모델
+    return genai.Client(api_key=api_key)
+
+
+# gemini-2.0-flash: 무료 티어 지원 최신 모델
+MODEL_ID = "gemini-2.0-flash"
 
 
 # ─────────────────────────────────────────────
-# 니치 & 키워드 풀 (코드에 직접 정의 → API 절약)
+# 키워드 풀
 # ─────────────────────────────────────────────
 KEYWORD_POOLS = {
     "ai_money": [
@@ -58,16 +62,13 @@ AUDIENCES = ["beginners", "freelancers", "bloggers", "entrepreneurs"]
 
 
 def pick_keyword() -> dict:
-    """풀에서 랜덤 키워드 선택 (중복 방지는 post_log에서 처리)"""
     niche = random.choice(list(KEYWORD_POOLS.keys()))
     keyword = random.choice(KEYWORD_POOLS[niche])
-    content_type = random.choice(CONTENT_TYPES)
-    audience = random.choice(AUDIENCES)
     return {
         "niche": niche,
         "keyword": keyword,
-        "content_type": content_type,
-        "audience": audience,
+        "content_type": random.choice(CONTENT_TYPES),
+        "audience": random.choice(AUDIENCES),
     }
 
 
@@ -86,7 +87,7 @@ STRICT RULES:
 - Do NOT fabricate statistics or tools
 
 MANDATORY STRUCTURE (use exact H1/H2/H3 markdown):
-1. # [SEO Title — clickable, keyword-included]
+1. # [SEO Title - clickable, keyword-included]
 2. ## Introduction  (hook + problem statement, 2-3 paragraphs)
 3. ## Why It Matters  (context + benefits)
 4. ## [Main Content Section]  (step-by-step OR list OR comparison)
@@ -101,9 +102,9 @@ Output: clean Markdown ONLY. No extra commentary."""
 def generate_post(meta: dict) -> dict:
     """
     Gemini로 블로그 포스트 생성.
-    Returns: {"keyword": ..., "content": ..., "niche": ...}
+    Returns: {"keyword": ..., "content": ..., "niche": ..., "content_type": ...}
     """
-    model = _get_model()
+    client = _get_client()
 
     user_prompt = (
         f"Write a complete SEO-optimized blog post.\n"
@@ -114,9 +115,11 @@ def generate_post(meta: dict) -> dict:
         f"Follow the mandatory structure exactly. Output Markdown only."
     )
 
-    response = model.generate_content(
-        [SYSTEM_PROMPT, user_prompt],
-        generation_config=genai.types.GenerationConfig(
+    response = client.models.generate_content(
+        model=MODEL_ID,
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
             temperature=0.75,
             max_output_tokens=2048,
         ),
